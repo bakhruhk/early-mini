@@ -13,7 +13,10 @@
 export function formatElapsed(startedAt: string | null): string {
 	if (!startedAt) return '00:00:00';
 
-	const start = new Date(startedAt);
+	// The Early API returns UTC timestamps without a 'Z' suffix.
+	// Without 'Z', JavaScript's Date() parses as local time, causing offset errors.
+	const normalized = startedAt.endsWith('Z') ? startedAt : startedAt + 'Z';
+	const start = new Date(normalized);
 	const now = new Date();
 	const diffMs = now.getTime() - start.getTime();
 

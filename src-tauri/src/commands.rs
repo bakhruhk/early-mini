@@ -11,7 +11,7 @@ use tauri::State;
 use tauri_plugin_store::StoreExt;
 
 use crate::api;
-use crate::state::AppState;
+use crate::state::{AppState, Settings, WindowGeometry};
 
 /// Authenticate with the Early API and persist credentials.
 ///
@@ -146,4 +146,134 @@ pub async fn stop_tracking(
         .ok_or("Not authenticated")?;
 
     api::tracking::stop_tracking(&token).await
+}
+
+/// Update the note/description on the currently running tracker.
+#[tauri::command]
+pub async fn update_note(
+    state: State<'_, AppState>,
+    text: String,
+) -> Result<serde_json::Value, String> {
+    let token = state
+        .auth_token
+        .lock()
+        .map_err(|e| e.to_string())?
+        .clone()
+        .ok_or("Not authenticated")?;
+
+    api::tracking::update_note(&token, &text).await
+}
+
+/// Fetch today's time entries for the daily summary.
+#[tauri::command]
+pub async fn get_today_entries(
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let token = state
+        .auth_token
+        .lock()
+        .map_err(|e| e.to_string())?
+        .clone()
+        .ok_or("Not authenticated")?;
+
+    // Build today's date range: start of day to end of day in ISO 8601
+    let today = chrono::Local::now().date_naive();
+    let start = format!("{}T00:00:00.000", today);
+    let end = format!("{}T23:59:59.999", today);
+
+    api::entries::get_time_entries(&token, &start, &end).await
+}
+
+/// Get the current user settings.
+#[tauri::command]
+pub async fn get_settings(
+    state: State<'_, AppState>,
+) -> Result<Settings, String> {
+    let s = state.settings.lock().map_err(|e| e.to_string())?;
+    Ok(s.clone())
+}
+
+/// Update settings and persist them to the store.
+#[tauri::command]
+pub async fn save_settings(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    new_settings: Settings,
+) -> Result<bool, String> {
+    // Update in-memory state
+    let mut s = state.settings.lock().map_err(|e| e.to_string())?;
+    *s = new_settings.clone();
+
+    // Persist to store
+    let store = app.store("settings.json").map_err(|e| e.to_string())?;
+    store.set(
+        "settings",
+        json!(new_settings),
+    );
+
+    Ok(true)
+}
+
+/// Load settings from the persistent store into AppState.
+/// Called on app startup.
+#[tauri::command]
+pub async fn load_settings(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<Settings, String> {
+    let store = app.store("settings.json").map_err(|e| e.to_string())?;
+
+    if let Some(val) = store.get("settings") {
+        if let Ok(loaded) = serde_json::from_value::<Settings>(val.clone()) {
+            let mut s = state.settings.lock().map_err(|e| e.to_string())?;
+            *s = loaded.clone();
+            return Ok(loaded);
+        }
+    }
+
+    // No stored settings — return defaults
+    let s = state.settings.lock().map_err(|e| e.to_string())?;
+    Ok(s.clone())
+}
+
+/// Save the current window position and size.
+#[tauri::command]
+pub async fn save_window_state(
+    app: tauri::AppHandle,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+) -> Result<bool, String> {
+    let geo = WindowGeometry { x, y, width, height };
+    let store = app.store("window.json").map_err(|e| e.to_string())?;
+    store.set("geometry", json!(geo));
+    Ok(true)
+}
+
+/// Load the saved window geometry.
+#[tauri::command]
+pub async fn load_window_state(
+    app: tauri::AppHandle,
+) -> Result<Option<WindowGeometry>, String> {
+    let store = app.store("window.json").map_err(|e| e.to_string())?;
+
+    if let Some(val) = store.get("geometry") {
+        if let Ok(geo) = serde_json::from_value::<WindowGeometry>(val.clone()) {
+            return Ok(Some(geo));
+        }
+    }
+
+    Ok(None)
+}
+
+/// Set the window visibility state (used by tray to track active/tray polling rate).
+#[tauri::command]
+pub async fn set_window_visible(
+    state: State<'_, AppState>,
+    visible: bool,
+) -> Result<bool, String> {
+    let mut v = state.window_visible.lock().map_err(|e| e.to_string())?;
+    *v = visible;
+    Ok(true)
 }

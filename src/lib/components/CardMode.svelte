@@ -1,41 +1,27 @@
 <!--
-  PillMode.svelte — Compact pill-shaped miniplayer showing the current tracking state.
+  CardMode.svelte — Medium-sized miniplayer view (~280×120px).
 
-  LAYOUT (left to right):
-  ● Activity Name  01:23:45  ■  ▾
-  
-  STATES:
-  - Tracking: colored dot + activity name + live timer + stop (■) icon + expand (▾) chevron
-  - Activity selected but not tracking: hollow dot + activity name + 00:00:00 + play (▶) icon + expand (▾)
-  - Idle: hollow dot + "Select..." + 00:00:00 + no action icon + expand (▾)
+  LAYOUT:
+  ┌──────────────────────────────────────┐
+  │ 🟢 Deep Work ▾       01:23:45  ■   │
+  │──────────────────────────────────────│
+  │ Working on auth module...        ✏️  │
+  └──────────────────────────────────────┘
 
-  SVELTE 5 CONCEPTS USED:
-  - `$state()`: Reactive local state (e.g. activities list, loading flags)
-  - `$effect()`: Side effects that react to state changes (polling timer, window resize)
-  - `$derived()`: Computed values that auto-update when dependencies change
-  - Store auto-subscribe `$tracking`: reads from the tracking store reactively
-  - `{#if}` / `{#each}`: Conditional and list rendering blocks
-  - `onclick`: Svelte 5 uses lowercase DOM event attributes
+  Reuses shared components: ActivitySwitcher, Timer, DescriptionEditor.
+  Shares stop/play/activity-switching logic with PillMode.
 -->
 <script lang="ts">
   import { tracking } from '$lib/stores/tracking';
+  import { stopTracking, startTracking, getCurrentTracking, getActivities } from '$lib/api';
   import { activities, type Activity } from '$lib/stores/activities';
-  import { getActivities, stopTracking, startTracking } from '$lib/api';
   import ActivitySwitcher from './ActivitySwitcher.svelte';
   import Timer from './Timer.svelte';
+  import DescriptionEditor from './DescriptionEditor.svelte';
   import { getCurrentWindow } from '@tauri-apps/api/window';
 
-  // --- Reactive state ---
-  // Note: Polling is now handled by the Rust backend (polling.rs).
-  // The tracking store is updated from 'tracking-update' events in +page.svelte.
-
-  /** Selected activity when not tracking (for play button) */
   let selectedActivity = $state<Activity | null>(null);
-
-  /** Loading flag to prevent double-clicks on stop/play */
   let actionLoading = $state(false);
-
-  /** Is the user currently tracking time? */
   let isTracking = $derived($tracking.isTracking);
 
   // Fetch activities on mount if not already loaded
@@ -56,7 +42,7 @@
     try {
       await stopTracking();
     } catch (err) {
-      console.error('Failed to stop tracking:', err);
+      console.error('Failed to stop:', err);
     } finally {
       actionLoading = false;
     }
@@ -77,8 +63,8 @@
       });
       selectedActivity = null;
     } catch (err) {
-      console.error('Failed to start tracking:', err);
-    }
+      console.error('Failed to start:', err);
+    } finally {
       actionLoading = false;
     }
   }
@@ -98,7 +84,7 @@
             noteText: null,
           });
         })
-        .catch((err) => console.error('Failed to switch activity:', err))
+        .catch((err) => console.error('Failed to switch:', err))
         .finally(() => {
           actionLoading = false;
           selectedActivity = null;
@@ -118,37 +104,45 @@
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="pill" onmousedown={handleMouseDown}>
-  <!-- Activity switcher (dot + name + chevron) -->
-  <ActivitySwitcher onSelect={handleActivitySelect} {selectedActivity} />
+<div class="card" onmousedown={handleMouseDown}>
+  <!-- Top row: activity switcher + timer + stop/play -->
+  <div class="top-row">
+    <ActivitySwitcher onSelect={handleActivitySelect} {selectedActivity} />
 
-  <!-- Live timer -->
-  <Timer startedAt={$tracking.startedAt} />
+    <Timer startedAt={$tracking.startedAt} />
 
-  <!-- Stop / Play button -->
-  {#if isTracking}
-    <button class="action stop" onclick={handleStop} disabled={actionLoading} title="Stop">■</button>
-  {:else if selectedActivity}
-    <button class="action play" onclick={handlePlay} disabled={actionLoading} title="Start">▶</button>
-  {/if}
+    {#if isTracking}
+      <button class="action stop" onclick={handleStop} disabled={actionLoading} title="Stop">■</button>
+    {:else if selectedActivity}
+      <button class="action play" onclick={handlePlay} disabled={actionLoading} title="Start">▶</button>
+    {/if}
+  </div>
+
+  <!-- Description row -->
+  <DescriptionEditor mode="compact" />
 </div>
 
 <style>
-  .pill {
+  .card {
+    display: flex;
+    flex-direction: column;
+    background: var(--bg, #1e1e1e);
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    width: 100%;
+    height: 100%;
+    box-sizing: border-box;
+    cursor: grab;
+    user-select: none;
+    overflow: hidden;
+  }
+
+  .top-row {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 0 12px;
-    height: 48px;
-    background: var(--bg, #1e1e1e);
-    border-radius: 24px;
-    cursor: grab;
-    position: relative;
-    user-select: none;
-    min-width: 0;
-    width: 100%;
-    box-sizing: border-box;
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 8px 12px;
+    min-height: 36px;
   }
 
   .action {

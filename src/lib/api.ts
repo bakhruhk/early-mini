@@ -55,3 +55,52 @@ export async function startTracking(activityId: string): Promise<any> {
 export async function stopTracking(): Promise<any> {
 	return invoke('stop_tracking');
 }
+
+/**
+ * Update the note/description on the currently running tracker.
+ */
+export async function updateNote(text: string): Promise<any> {
+	return invoke('update_note', { text });
+}
+
+/**
+ * Fetch today's time entries for the daily summary.
+ */
+export async function getTodayEntries(): Promise<any> {
+	return invoke('get_today_entries');
+}
+
+/**
+ * Load persisted settings from the backend.
+ */
+export async function loadSettings(): Promise<any> {
+	return invoke('load_settings');
+}
+
+/**
+ * Save updated settings to the backend.
+ */
+export async function saveSettings(newSettings: any): Promise<boolean> {
+	return invoke('save_settings', { newSettings });
+}
+
+/**
+ * Save the current window position and size.
+ */
+export async function saveWindowState(x: number, y: number, width: number, height: number): Promise<boolean> {
+	return invoke('save_window_state', { x, y, width, height });
+}
+
+/**
+ * Load the saved window geometry.
+ */
+export async function loadWindowState(): Promise<any> {
+	return invoke('load_window_state');
+}
+
+/**
+ * Tell the backend whether the window is visible (affects polling rate).
+ */
+export async function setWindowVisible(visible: boolean): Promise<boolean> {
+	return invoke('set_window_visible', { visible });
+}
