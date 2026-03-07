@@ -44,7 +44,7 @@ pub fn setup_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>
 
     // Build the tray icon using the app's default icon
     let _tray = TrayIconBuilder::with_id("main-tray")
-        .icon(Image::from_bytes(include_bytes!("../icons/32x32.png"))?)
+        .icon(Image::from_bytes(include_bytes!("../icons/tray-icon.png"))?)
         .icon_as_template(true)
         .tooltip("Early Mini")
         .menu(&menu)

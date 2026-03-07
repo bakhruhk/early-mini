@@ -1,6 +1,6 @@
 {
   "name": "early-mini",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Always-on-top miniplayer for Early (Timeular) time tracking",
   "type": "module",
   "scripts": {

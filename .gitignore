@@ -13,3 +13,8 @@ vite.config.ts.timestamp-*
 src-tauri/target/
 src-tauri/gen/
 *.rs.bk
+
+# Generated icon intermediates (keep logo_master.png source)
+logo_master_bg.png
+src-tauri/icons/android/
+src-tauri/icons/ios/
