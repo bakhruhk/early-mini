@@ -48,9 +48,21 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      # ── Detect signing availability ─────────────────────────────────
+      - name: Check Apple signing secrets
+        if: runner.os == 'macOS'
+        env:
+          APPLE_CERT: ${{ secrets.APPLE_CERTIFICATE }}
+        run: |
+          if [ -n "$APPLE_CERT" ]; then
+            echo "HAS_APPLE_CERT=true" >> $GITHUB_ENV
+          else
+            echo "HAS_APPLE_CERT=false" >> $GITHUB_ENV
+          fi
+
       # ── macOS Code Signing ──────────────────────────────────────────
       - name: Import Apple certificate
-        if: runner.os == 'macOS' && env.APPLE_CERTIFICATE != ''
+        if: runner.os == 'macOS' && env.HAS_APPLE_CERT == 'true'
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -70,20 +82,24 @@ jobs:
 
       # ── Windows Code Signing ────────────────────────────────────────
       - name: Import Windows certificate
-        if: runner.os == 'Windows' && env.WINDOWS_CERTIFICATE != ''
+        if: runner.os == 'Windows'
         env:
           WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
           WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
         run: |
-          New-Item -ItemType directory -Path certificate
-          Set-Content -Path certificate/tempCert.txt -Value $env:WINDOWS_CERTIFICATE
-          certutil -decode certificate/tempCert.txt certificate/certificate.pfx
-          Remove-Item -Path certificate -Include tempCert.txt
-          Import-PfxCertificate -FilePath certificate/certificate.pfx -CertStoreLocation Cert:\CurrentUser\My -Password (ConvertTo-SecureString -String $env:WINDOWS_CERTIFICATE_PASSWORD -Force -AsPlainText)
+          if ($env:WINDOWS_CERTIFICATE) {
+            New-Item -ItemType directory -Path certificate
+            Set-Content -Path certificate/tempCert.txt -Value $env:WINDOWS_CERTIFICATE
+            certutil -decode certificate/tempCert.txt certificate/certificate.pfx
+            Remove-Item -Path certificate -Include tempCert.txt
+            Import-PfxCertificate -FilePath certificate/certificate.pfx -CertStoreLocation Cert:\CurrentUser\My -Password (ConvertTo-SecureString -String $env:WINDOWS_CERTIFICATE_PASSWORD -Force -AsPlainText)
+          } else {
+            Write-Output 'No Windows certificate configured, skipping signing'
+          }
 
       # ── Build & Release (macOS with signing) ─────────────────────────
       - name: Build and publish (macOS signed)
-        if: runner.os == 'macOS' && secrets.APPLE_CERTIFICATE != ''
+        if: runner.os == 'macOS' && env.HAS_APPLE_CERT == 'true'
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -112,9 +128,34 @@ jobs:
           prerelease: false
           args: ${{ matrix.args }}
 
-      # ── Build & Release (macOS unsigned / Windows) ──────────────────
-      - name: Build and publish (unsigned)
-        if: runner.os != 'macOS' || secrets.APPLE_CERTIFICATE == ''
+      # ── Build & Release (macOS unsigned) ────────────────────────────
+      - name: Build and publish (macOS unsigned)
+        if: runner.os == 'macOS' && env.HAS_APPLE_CERT != 'true'
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: v__VERSION__
+          releaseName: 'Early Mini v__VERSION__'
+          releaseBody: |
+            ## Early Mini v__VERSION__
+
+            Download the installer for your platform below.
+
+            | Platform | File |
+            |----------|------|
+            | macOS (Apple Silicon) | `.dmg` (aarch64) |
+            | macOS (Intel) | `.dmg` (x86_64) |
+            | Windows | `.msi` / `.exe` |
+
+            > **Note:** Unsigned builds may trigger OS security warnings. Right-click → Open on macOS, or click "More info" → "Run anyway" on Windows.
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}
+
+      # ── Build & Release (Windows) ───────────────────────────────────
+      - name: Build and publish (Windows)
+        if: runner.os == 'Windows'
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
