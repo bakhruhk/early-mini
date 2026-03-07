@@ -29,6 +29,48 @@ pub fn run() {
             // Start the background polling loop
             polling::start_polling(app.handle());
 
+            // Register global hotkey: Cmd+Shift+E (macOS) / Ctrl+Shift+E (Windows/Linux)
+            #[cfg(desktop)]
+            {
+                use tauri_plugin_global_shortcut::{
+                    Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState,
+                };
+
+                let toggle_shortcut = Shortcut::new(
+                    Some(Modifiers::SUPER | Modifiers::SHIFT),
+                    Code::KeyE,
+                );
+
+                app.handle().plugin(
+                    tauri_plugin_global_shortcut::Builder::new()
+                        .with_handler(move |app, shortcut, event| {
+                            use tauri::Manager;
+                            if shortcut == &toggle_shortcut
+                                && event.state() == ShortcutState::Pressed
+                            {
+                                if let Some(window) = app.get_webview_window("main") {
+                                    let state = app.state::<AppState>();
+                                    if window.is_visible().unwrap_or(false) {
+                                        let _ = window.hide();
+                                        if let Ok(mut v) = state.window_visible.lock() {
+                                            *v = false;
+                                        }
+                                    } else {
+                                        let _ = window.show();
+                                        let _ = window.set_focus();
+                                        if let Ok(mut v) = state.window_visible.lock() {
+                                            *v = true;
+                                        }
+                                    }
+                                }
+                            }
+                        })
+                        .build(),
+                )?;
+
+                app.global_shortcut().register(toggle_shortcut)?;
+            }
+
             Ok(())
         })
         // Register all Tauri commands that the frontend can invoke

@@ -142,7 +142,7 @@
   }
 
   .chevron:hover {
-    background: rgba(255, 255, 255, 0.1);
+    background: var(--action-hover, rgba(255, 255, 255, 0.1));
     color: var(--text, #e0e0e0);
   }
 
@@ -153,7 +153,7 @@
     right: 0;
     margin-top: 4px;
     background: var(--bg, #1e1e1e);
-    border: 1px solid rgba(255, 255, 255, 0.12);
+    border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
     border-radius: 8px;
     max-height: 200px;
     overflow-y: auto;
@@ -178,11 +178,11 @@
   }
 
   .dropdown-item:hover {
-    background: rgba(255, 255, 255, 0.08);
+    background: var(--action-hover, rgba(255, 255, 255, 0.08));
   }
 
   .dropdown-item.active {
-    background: rgba(255, 255, 255, 0.05);
+    background: var(--action-hover, rgba(255, 255, 255, 0.05));
     font-weight: 500;
   }
 

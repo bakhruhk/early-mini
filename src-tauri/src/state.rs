@@ -17,6 +17,20 @@ pub struct Settings {
     pub tray_polling_interval_secs: u64,
     /// Whether the window stays on top of all other windows (default: true)
     pub always_on_top: bool,
+    /// Theme preference: "auto" (follow system), "dark", or "light" (default: "auto")
+    #[serde(default = "default_theme")]
+    pub theme_preference: String,
+    /// Window opacity when idle / mouse not hovering (0.0–1.0, default: 0.85)
+    #[serde(default = "default_opacity")]
+    pub idle_opacity: f64,
+}
+
+fn default_theme() -> String {
+    "auto".to_string()
+}
+
+fn default_opacity() -> f64 {
+    0.85
 }
 
 impl Default for Settings {
@@ -26,6 +40,8 @@ impl Default for Settings {
             polling_interval_secs: 3,
             tray_polling_interval_secs: 10,
             always_on_top: true,
+            theme_preference: default_theme(),
+            idle_opacity: default_opacity(),
         }
     }
 }

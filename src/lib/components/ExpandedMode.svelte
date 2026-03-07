@@ -20,13 +20,14 @@
   import { tracking } from '$lib/stores/tracking';
   import { stopTracking, startTracking, getActivities } from '$lib/api';
   import { activities, type Activity } from '$lib/stores/activities';
+  import { selectedActivity } from '$lib/stores/selection';
+  import { connection } from '$lib/stores/connection';
   import ActivitySwitcher from './ActivitySwitcher.svelte';
   import Timer from './Timer.svelte';
   import DescriptionEditor from './DescriptionEditor.svelte';
   import DaySummary from './DaySummary.svelte';
+  import ConnectionIndicator from './ConnectionIndicator.svelte';
   import { getCurrentWindow } from '@tauri-apps/api/window';
-
-  let selectedActivity = $state<Activity | null>(null);
   let actionLoading = $state(false);
   let isTracking = $derived($tracking.isTracking);
 
@@ -54,19 +55,19 @@
   }
 
   async function handlePlay() {
-    if (actionLoading || !selectedActivity) return;
+    if (actionLoading || !$selectedActivity) return;
     actionLoading = true;
     try {
-      const result = await startTracking(selectedActivity.id);
+      const result = await startTracking($selectedActivity.id);
       tracking.set({
         isTracking: true,
-        activityId: String(selectedActivity.id),
-        activityName: selectedActivity.name,
-        activityColor: selectedActivity.color,
+        activityId: String($selectedActivity.id),
+        activityName: $selectedActivity.name,
+        activityColor: $selectedActivity.color,
         startedAt: result?.startedAt || new Date().toISOString(),
         noteText: result?.note?.text || null,
       });
-      selectedActivity = null;
+      selectedActivity.set(null);
     } catch (err) {
       console.error('Failed to start:', err);
     } finally {
@@ -92,10 +93,10 @@
         .catch((err) => console.error('Failed to switch:', err))
         .finally(() => {
           actionLoading = false;
-          selectedActivity = null;
+          selectedActivity.set(null);
         });
     } else {
-      selectedActivity = activity;
+      selectedActivity.set(activity);
     }
   }
 
@@ -112,15 +113,16 @@
 <div class="expanded" onmousedown={handleMouseDown}>
   <!-- Top row: activity switcher + timer + stop/play -->
   <div class="top-row">
-    <ActivitySwitcher onSelect={handleActivitySelect} {selectedActivity} />
+    <ActivitySwitcher onSelect={handleActivitySelect} selectedActivity={$selectedActivity} />
 
     <Timer startedAt={$tracking.startedAt} />
 
     {#if isTracking}
-      <button class="action stop" onclick={handleStop} disabled={actionLoading} title="Stop">■</button>
-    {:else if selectedActivity}
-      <button class="action play" onclick={handlePlay} disabled={actionLoading} title="Start">▶</button>
+      <button class="action stop" onclick={handleStop} disabled={actionLoading || !$connection.online} title="Stop">■</button>
+    {:else if $selectedActivity}
+      <button class="action play" onclick={handlePlay} disabled={actionLoading || !$connection.online} title="Start">▶</button>
     {/if}
+    <ConnectionIndicator />
   </div>
 
   <!-- Full description editor -->
@@ -136,7 +138,7 @@
     flex-direction: column;
     background: var(--bg, #1e1e1e);
     border-radius: 12px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
     width: 100%;
     height: 100%;
     box-sizing: border-box;
@@ -165,7 +167,7 @@
   }
 
   .action:hover {
-    background: rgba(255, 255, 255, 0.1);
+    background: var(--action-hover, rgba(255, 255, 255, 0.1));
   }
 
   .action:disabled {
