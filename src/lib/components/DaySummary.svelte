@@ -60,7 +60,7 @@
 <style>
   .summary {
     padding: 8px 12px;
-    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    border-top: 1px solid var(--border, rgba(255, 255, 255, 0.06));
     font-size: 12px;
     color: var(--text-secondary, #888);
   }

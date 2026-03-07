@@ -23,7 +23,12 @@
         "alwaysOnTop": true,
         "transparent": true,
         "resizable": true,
-        "skipTaskbar": true
+        "skipTaskbar": true,
+        "windowEffects": {
+          "effects": ["hudWindow", "mica"],
+          "state": "active",
+          "radius": 24
+        }
       }
     ],
     "security": {

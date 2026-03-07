@@ -70,6 +70,11 @@ pub async fn make_request(
         return Ok(json!({"success": true, "empty": true}));
     }
 
+    // 401 Unauthorized — token expired, needs re-authentication
+    if resp.status().as_u16() == 401 {
+        return Err("UNAUTHORIZED".to_string());
+    }
+
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();

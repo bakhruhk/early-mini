@@ -20,17 +20,13 @@
 <script lang="ts">
   import { tracking } from '$lib/stores/tracking';
   import { activities, type Activity } from '$lib/stores/activities';
+  import { selectedActivity } from '$lib/stores/selection';
+  import { connection } from '$lib/stores/connection';
   import { getActivities, stopTracking, startTracking } from '$lib/api';
   import ActivitySwitcher from './ActivitySwitcher.svelte';
   import Timer from './Timer.svelte';
+  import ConnectionIndicator from './ConnectionIndicator.svelte';
   import { getCurrentWindow } from '@tauri-apps/api/window';
-
-  // --- Reactive state ---
-  // Note: Polling is now handled by the Rust backend (polling.rs).
-  // The tracking store is updated from 'tracking-update' events in +page.svelte.
-
-  /** Selected activity when not tracking (for play button) */
-  let selectedActivity = $state<Activity | null>(null);
 
   /** Loading flag to prevent double-clicks on stop/play */
   let actionLoading = $state(false);
@@ -63,22 +59,22 @@
   }
 
   async function handlePlay() {
-    if (actionLoading || !selectedActivity) return;
+    if (actionLoading || !$selectedActivity) return;
     actionLoading = true;
     try {
-      const result = await startTracking(selectedActivity.id);
+      const result = await startTracking($selectedActivity.id);
       tracking.set({
         isTracking: true,
-        activityId: String(selectedActivity.id),
-        activityName: selectedActivity.name,
-        activityColor: selectedActivity.color,
+        activityId: String($selectedActivity.id),
+        activityName: $selectedActivity.name,
+        activityColor: $selectedActivity.color,
         startedAt: result?.startedAt || new Date().toISOString(),
         noteText: result?.note?.text || null,
       });
-      selectedActivity = null;
+      selectedActivity.set(null);
     } catch (err) {
       console.error('Failed to start tracking:', err);
-    }
+    } finally {
       actionLoading = false;
     }
   }
@@ -101,10 +97,10 @@
         .catch((err) => console.error('Failed to switch activity:', err))
         .finally(() => {
           actionLoading = false;
-          selectedActivity = null;
+          selectedActivity.set(null);
         });
     } else {
-      selectedActivity = activity;
+      selectedActivity.set(activity);
     }
   }
 
@@ -120,17 +116,18 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="pill" onmousedown={handleMouseDown}>
   <!-- Activity switcher (dot + name + chevron) -->
-  <ActivitySwitcher onSelect={handleActivitySelect} {selectedActivity} />
+  <ActivitySwitcher onSelect={handleActivitySelect} selectedActivity={$selectedActivity} />
 
   <!-- Live timer -->
   <Timer startedAt={$tracking.startedAt} />
 
   <!-- Stop / Play button -->
   {#if isTracking}
-    <button class="action stop" onclick={handleStop} disabled={actionLoading} title="Stop">■</button>
-  {:else if selectedActivity}
-    <button class="action play" onclick={handlePlay} disabled={actionLoading} title="Start">▶</button>
+    <button class="action stop" onclick={handleStop} disabled={actionLoading || !$connection.online} title="Stop">■</button>
+  {:else if $selectedActivity}
+    <button class="action play" onclick={handlePlay} disabled={actionLoading || !$connection.online} title="Start">▶</button>
   {/if}
+  <ConnectionIndicator />
 </div>
 
 <style>
@@ -148,7 +145,7 @@
     min-width: 0;
     width: 100%;
     box-sizing: border-box;
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
   }
 
   .action {
@@ -163,7 +160,7 @@
   }
 
   .action:hover {
-    background: rgba(255, 255, 255, 0.1);
+    background: var(--action-hover, rgba(255, 255, 255, 0.1));
   }
 
   .action:disabled {

@@ -112,7 +112,7 @@
     align-items: center;
     gap: 6px;
     padding: 6px 12px;
-    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    border-top: 1px solid var(--border, rgba(255, 255, 255, 0.06));
     min-height: 28px;
   }
 
@@ -162,7 +162,7 @@
 
   .full {
     padding: 8px 12px;
-    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    border-top: 1px solid var(--border, rgba(255, 255, 255, 0.06));
   }
 
   .label {
