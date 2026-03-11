@@ -19,6 +19,12 @@ export interface TrackingState {
 	activityColor: string | null;
 	startedAt: string | null;
 	noteText: string | null;
+	notePending?: boolean;
+	notePendingUntil?: number | null;
+	actionPending?: boolean;
+	actionPendingUntil?: number | null;
+	actionDesiredIsTracking?: boolean | null;
+	actionPendingActivityId?: string | null;
 }
 
 /** The global tracking store, initialized to idle state. */
@@ -28,5 +34,11 @@ export const tracking = writable<TrackingState>({
 	activityName: null,
 	activityColor: null,
 	startedAt: null,
-	noteText: null
+	noteText: null,
+	notePending: false,
+	notePendingUntil: null,
+	actionPending: false,
+	actionPendingUntil: null,
+	actionDesiredIsTracking: null,
+	actionPendingActivityId: null
 });

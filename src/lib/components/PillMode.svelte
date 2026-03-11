@@ -18,11 +18,11 @@
   - `onclick`: Svelte 5 uses lowercase DOM event attributes
 -->
 <script lang="ts">
-  import { tracking } from '$lib/stores/tracking';
+  import { tracking, type TrackingState } from '$lib/stores/tracking';
   import { activities, type Activity } from '$lib/stores/activities';
   import { selectedActivity } from '$lib/stores/selection';
   import { connection } from '$lib/stores/connection';
-  import { getActivities, stopTracking, startTracking } from '$lib/api';
+  import { getActivities, isBenignStopTrackingError, stopTracking, startTracking } from '$lib/api';
   import ActivitySwitcher from './ActivitySwitcher.svelte';
   import Timer from './Timer.svelte';
   import ConnectionIndicator from './ConnectionIndicator.svelte';
@@ -49,10 +49,36 @@
   async function handleStop() {
     if (actionLoading) return;
     actionLoading = true;
+    const previous = $tracking;
+    const optimisticStopState: TrackingState = {
+      isTracking: false,
+      activityId: null,
+      activityName: null,
+      activityColor: null,
+      startedAt: null,
+      noteText: null,
+      notePending: false,
+      notePendingUntil: null,
+      actionPending: true,
+      actionPendingUntil: Date.now() + 15000,
+      actionDesiredIsTracking: false,
+      actionPendingActivityId: null,
+    };
+    tracking.set(optimisticStopState);
     try {
       await stopTracking();
     } catch (err) {
       console.error('Failed to stop tracking:', err);
+      if (isBenignStopTrackingError(err)) {
+        return;
+      }
+      tracking.set({
+        ...previous,
+        actionPending: false,
+        actionPendingUntil: null,
+        actionDesiredIsTracking: null,
+        actionPendingActivityId: null,
+      });
     } finally {
       actionLoading = false;
     }
@@ -61,19 +87,51 @@
   async function handlePlay() {
     if (actionLoading || !$selectedActivity) return;
     actionLoading = true;
+    const activity = $selectedActivity;
+    if (!activity) {
+      actionLoading = false;
+      return;
+    }
+    const optimisticStartedAt = new Date().toISOString();
+    const optimisticStartState: TrackingState = {
+      isTracking: true,
+      activityId: String(activity.id),
+      activityName: activity.name,
+      activityColor: activity.color,
+      startedAt: optimisticStartedAt,
+      noteText: null,
+      notePending: false,
+      notePendingUntil: null,
+      actionPending: true,
+      actionPendingUntil: Date.now() + 15000,
+      actionDesiredIsTracking: true,
+      actionPendingActivityId: String(activity.id),
+    };
+    tracking.set(optimisticStartState);
     try {
-      const result = await startTracking($selectedActivity.id);
-      tracking.set({
-        isTracking: true,
-        activityId: String($selectedActivity.id),
-        activityName: $selectedActivity.name,
-        activityColor: $selectedActivity.color,
-        startedAt: result?.startedAt || new Date().toISOString(),
-        noteText: result?.note?.text || null,
-      });
+      const result = await startTracking(activity.id);
+      tracking.update((t) => ({
+        ...t,
+        startedAt: result?.startedAt || t.startedAt,
+        noteText: result?.note?.text || t.noteText,
+      }));
       selectedActivity.set(null);
     } catch (err) {
       console.error('Failed to start tracking:', err);
+      tracking.set({
+        isTracking: false,
+        activityId: null,
+        activityName: null,
+        activityColor: null,
+        startedAt: null,
+        noteText: null,
+        notePending: false,
+        notePendingUntil: null,
+        actionPending: false,
+        actionPendingUntil: null,
+        actionDesiredIsTracking: null,
+        actionPendingActivityId: null,
+      });
     } finally {
       actionLoading = false;
     }
@@ -82,23 +140,50 @@
   function handleActivitySelect(activity: Activity) {
     if (isTracking) {
       actionLoading = true;
-      stopTracking()
-        .then(() => startTracking(activity.id))
-        .then((result) => {
+      const previous = $tracking;
+      const optimisticStartedAt = new Date().toISOString();
+      const optimisticSwitchState: TrackingState = {
+        isTracking: true,
+        activityId: String(activity.id),
+        activityName: activity.name,
+        activityColor: activity.color,
+        startedAt: optimisticStartedAt,
+        noteText: null,
+        notePending: false,
+        notePendingUntil: null,
+        actionPending: true,
+        actionPendingUntil: Date.now() + 15000,
+        actionDesiredIsTracking: true,
+        actionPendingActivityId: String(activity.id),
+      };
+      tracking.set(optimisticSwitchState);
+      (async () => {
+        try {
+          try {
+            await stopTracking();
+          } catch (err) {
+            if (!isBenignStopTrackingError(err)) throw err;
+          }
+          const result = await startTracking(activity.id);
+          tracking.update((t) => ({
+            ...t,
+            startedAt: result?.startedAt || t.startedAt,
+            noteText: result?.note?.text || null,
+          }));
+        } catch (err) {
+          console.error('Failed to switch activity:', err);
           tracking.set({
-            isTracking: true,
-            activityId: String(activity.id),
-            activityName: activity.name,
-            activityColor: activity.color,
-            startedAt: result?.startedAt || new Date().toISOString(),
-            noteText: null,
+            ...previous,
+            actionPending: false,
+            actionPendingUntil: null,
+            actionDesiredIsTracking: null,
+            actionPendingActivityId: null,
           });
-        })
-        .catch((err) => console.error('Failed to switch activity:', err))
-        .finally(() => {
+        } finally {
           actionLoading = false;
           selectedActivity.set(null);
-        });
+        }
+      })();
     } else {
       selectedActivity.set(activity);
     }
@@ -119,7 +204,7 @@
   <ActivitySwitcher onSelect={handleActivitySelect} selectedActivity={$selectedActivity} />
 
   <!-- Live timer -->
-  <Timer startedAt={$tracking.startedAt} />
+  <Timer startedAt={$tracking.startedAt} isTracking={isTracking} activityColor={$tracking.activityColor} />
 
   <!-- Stop / Play button -->
   {#if isTracking}

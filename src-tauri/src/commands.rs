@@ -13,6 +13,7 @@ use tauri_plugin_store::StoreExt;
 use crate::api;
 use crate::state::{AppState, Settings, WindowGeometry};
 
+
 /// Authenticate with the Early API and persist credentials.
 ///
 /// Called from the SetupScreen when the user enters their API key and secret.
