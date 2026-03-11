@@ -56,6 +56,28 @@ export async function stopTracking(): Promise<any> {
 	return invoke('stop_tracking');
 }
 
+function errorMessage(err: unknown): string {
+	if (typeof err === 'string') return err;
+	if (err instanceof Error) return err.message;
+	try {
+		return JSON.stringify(err);
+	} catch {
+		return String(err);
+	}
+}
+
+/**
+ * These stop errors are expected terminal outcomes and should not restore local tracking UI.
+ */
+export function isBenignStopTrackingError(err: unknown): boolean {
+	const msg = errorMessage(err);
+	return (
+		msg.includes('"code":"00400100001"') ||
+		msg.includes('Stopped-At Timestamp is not at least 1 minute after Started-At Timestamp') ||
+		msg.includes('There is no Tracking in progress')
+	);
+}
+
 /**
  * Update the note/description on the currently running tracker.
  */
@@ -104,3 +126,4 @@ export async function loadWindowState(): Promise<any> {
 export async function setWindowVisible(visible: boolean): Promise<boolean> {
 	return invoke('set_window_visible', { visible });
 }
+

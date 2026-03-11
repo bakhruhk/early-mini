@@ -45,14 +45,28 @@
   async function saveEdit() {
     editing = false;
     if (draft !== noteText) {
+      const previous = noteText;
+      const next = draft;
+
+      // Optimistic local update so UI reflects immediately
+      tracking.update((t) => ({
+        ...t,
+        noteText: next,
+        notePending: true,
+        notePendingUntil: Date.now() + 15000,
+      }));
       try {
-        await updateNote(draft);
-        // Update the store optimistically
-        tracking.update((t) => ({ ...t, noteText: draft }));
+        await updateNote(next);
       } catch (err) {
         console.error('Failed to update note:', err);
         // Revert on failure
-        draft = noteText;
+        tracking.update((t) => ({
+          ...t,
+          noteText: previous,
+          notePending: false,
+          notePendingUntil: null,
+        }));
+        draft = previous;
       }
     }
   }

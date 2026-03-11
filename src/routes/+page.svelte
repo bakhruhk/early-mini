@@ -12,18 +12,23 @@
   - `{#if}`: Conditional rendering for view + mode switching.
 -->
 <script lang="ts">
-  import { checkAuth, loadSettings, loadWindowState, saveWindowState, startTracking, stopTracking } from '$lib/api';
+  import { checkAuth, isBenignStopTrackingError, loadSettings, loadWindowState, saveWindowState, startTracking, stopTracking } from '$lib/api';
   import { activities } from '$lib/stores/activities';
   import { selectedActivity } from '$lib/stores/selection';
   import { connection } from '$lib/stores/connection';
   import { themePreference, applyTheme, type ThemePreference } from '$lib/stores/theme';
   import { listen } from '@tauri-apps/api/event';
   import { getCurrentWindow, PhysicalPosition, PhysicalSize } from '@tauri-apps/api/window';
-  import { tracking } from '$lib/stores/tracking';
+  import { tracking, type TrackingState } from '$lib/stores/tracking';
   import SetupScreen from '$lib/components/SetupScreen.svelte';
   import PillMode from '$lib/components/PillMode.svelte';
   import CardMode from '$lib/components/CardMode.svelte';
   import ExpandedMode from '$lib/components/ExpandedMode.svelte';
+
+  const MIN_WINDOW_WIDTH = 220;
+  const MAX_WINDOW_WIDTH = 960;
+  const MIN_WINDOW_HEIGHT = 48;
+  const MAX_WINDOW_HEIGHT = 520;
 
   // --- View state ---
   let view = $state<'loading' | 'setup' | 'main'>('loading');
@@ -46,6 +51,14 @@
 
   // --- Idle opacity from settings ---
   let idleOpacity = $state(0.85);
+
+  function clampWidth(width: number): number {
+    return Math.max(MIN_WINDOW_WIDTH, Math.min(MAX_WINDOW_WIDTH, Math.round(width)));
+  }
+
+  function clampHeight(height: number): number {
+    return Math.max(MIN_WINDOW_HEIGHT, Math.min(MAX_WINDOW_HEIGHT, Math.round(height)));
+  }
 
   // --- Auth check + settings load on mount ---
   $effect(() => {
@@ -122,25 +135,88 @@
 
     listen<{ is_tracking: boolean; data: any }>('tracking-update', (event) => {
       const { is_tracking, data } = event.payload;
-      if (is_tracking && data?.activity) {
-        tracking.set({
-          isTracking: true,
-          activityId: data.activity.id,
-          activityName: data.activity.name,
-          activityColor: data.activity.color,
-          startedAt: data.startedAt,
-          noteText: data.note?.text || null,
-        });
-      } else {
-        tracking.set({
+      const incomingIsTracking = is_tracking && !!data?.activity;
+      const incomingActivityId = incomingIsTracking ? String(data.activity.id) : null;
+
+      tracking.update((prev) => {
+        const now = Date.now();
+        const actionPending = !!prev.actionPending;
+        const actionPendingValid = actionPending && (prev.actionPendingUntil ?? 0) > now;
+        const desiredTracking = prev.actionDesiredIsTracking;
+        const pendingActivityId = prev.actionPendingActivityId ?? null;
+        if (actionPendingValid && desiredTracking === false) {
+          // Sticky-stop mode: keep local "stopped" state during pending window
+          // so stale/oscillating poll responses cannot restart the timer visually.
+          const nextState = {
+            ...prev,
+            isTracking: false,
+            activityId: null,
+            activityName: null,
+            activityColor: null,
+            startedAt: null,
+            noteText: null,
+            notePending: false,
+            notePendingUntil: null,
+          };
+          return nextState;
+        }
+
+        let backendMatchesAction = true;
+        if (actionPendingValid && desiredTracking === true) {
+          backendMatchesAction =
+            incomingIsTracking &&
+            (!pendingActivityId || pendingActivityId === incomingActivityId);
+        }
+
+        // Keep optimistic local start/switch state until backend catches up (or timeout expires)
+        if (actionPendingValid && desiredTracking === true && !backendMatchesAction) {
+          return prev;
+        }
+
+        if (incomingIsTracking) {
+          const incomingNote = data.note?.text || null;
+          const localNote = prev.noteText ?? null;
+          const pendingNote = !!prev.notePending;
+          const pendingNoteUntil = prev.notePendingUntil ?? 0;
+          const pendingNoteStillValid = pendingNote && pendingNoteUntil > now;
+          const backendNoteCaughtUp = incomingNote === localNote;
+
+          const preserveLocalNote = pendingNoteStillValid && !backendNoteCaughtUp;
+          const nextNote = preserveLocalNote ? localNote : incomingNote;
+
+          const nextState = {
+            isTracking: true,
+            activityId: incomingActivityId,
+            activityName: data.activity.name,
+            activityColor: data.activity.color,
+            startedAt: data.startedAt,
+            noteText: nextNote,
+            notePending: preserveLocalNote ? true : false,
+            notePendingUntil: preserveLocalNote ? pendingNoteUntil : null,
+            actionPending: false,
+            actionPendingUntil: null,
+            actionDesiredIsTracking: null,
+            actionPendingActivityId: null,
+          };
+          return nextState;
+        }
+
+        const nextState = {
           isTracking: false,
           activityId: null,
           activityName: null,
           activityColor: null,
           startedAt: null,
           noteText: null,
-        });
-      }
+          notePending: false,
+          notePendingUntil: null,
+          actionPending: false,
+          actionPendingUntil: null,
+          actionDesiredIsTracking: null,
+          actionPendingActivityId: null,
+        };
+        return nextState;
+      });
 
       // Successful poll — mark connection as online
       connection.set({
@@ -176,26 +252,37 @@
 
     const win = getCurrentWindow();
 
+    win.setSizeConstraints({
+      minWidth: MIN_WINDOW_WIDTH,
+      maxWidth: MAX_WINDOW_WIDTH,
+      minHeight: MIN_WINDOW_HEIGHT,
+      maxHeight: MAX_WINDOW_HEIGHT,
+    }).catch((err) => {
+      console.error('Failed to set window size constraints:', err);
+    });
+
     // Get initial size
     win.innerSize().then((size) => {
-      winWidth = size.width;
-      winHeight = size.height;
+      winWidth = clampWidth(size.width);
+      winHeight = clampHeight(size.height);
     });
 
     // Restore saved position/size
     loadWindowState().then((geo) => {
       if (geo) {
+        const clampedWidth = clampWidth(geo.width);
+        const clampedHeight = clampHeight(geo.height);
         win.setPosition(new PhysicalPosition(geo.x, geo.y));
-        win.setSize(new PhysicalSize(geo.width, geo.height));
-        winWidth = geo.width;
-        winHeight = geo.height;
+        win.setSize(new PhysicalSize(clampedWidth, clampedHeight));
+        winWidth = clampedWidth;
+        winHeight = clampedHeight;
       }
     }).catch(() => {});
 
     // Listen for resize
     win.onResized((size) => {
-      winWidth = size.payload.width;
-      winHeight = size.payload.height;
+      winWidth = clampWidth(size.payload.width);
+      winHeight = clampHeight(size.payload.height);
       debounceSave();
     }).then((fn) => { unlistenResize = fn; });
 
@@ -210,7 +297,7 @@
         try {
           const size = await win.innerSize();
           const pos = await win.innerPosition();
-          saveWindowState(pos.x, pos.y, size.width, size.height);
+          saveWindowState(pos.x, pos.y, clampWidth(size.width), clampHeight(size.height));
         } catch {}
       }, 500);
     }
@@ -258,18 +345,36 @@
 
       // If tracking: stop
       if ($tracking.isTracking) {
+        const previous = $tracking;
+        const optimisticStopState: TrackingState = {
+          isTracking: false,
+          activityId: null,
+          activityName: null,
+          activityColor: null,
+          startedAt: null,
+          noteText: null,
+          notePending: false,
+          notePendingUntil: null,
+          actionPending: true,
+          actionPendingUntil: Date.now() + 15000,
+          actionDesiredIsTracking: false,
+          actionPendingActivityId: null,
+        };
+        tracking.set(optimisticStopState);
         try {
           await stopTracking();
-          tracking.set({
-            isTracking: false,
-            activityId: null,
-            activityName: null,
-            activityColor: null,
-            startedAt: null,
-            noteText: null,
-          });
         } catch (err) {
           console.error('Failed to stop tracking (Enter):', err);
+          if (isBenignStopTrackingError(err)) {
+            return;
+          }
+          tracking.set({
+            ...previous,
+            actionPending: false,
+            actionPendingUntil: null,
+            actionDesiredIsTracking: null,
+            actionPendingActivityId: null,
+          });
         }
         return;
       }
@@ -277,19 +382,46 @@
       // If idle and we have a selection: start
       const activity = $selectedActivity;
       if (!activity) return;
+      const optimisticStartedAt = new Date().toISOString();
+      const optimisticStartState: TrackingState = {
+        isTracking: true,
+        activityId: String(activity.id),
+        activityName: activity.name,
+        activityColor: activity.color,
+        startedAt: optimisticStartedAt,
+        noteText: null,
+        notePending: false,
+        notePendingUntil: null,
+        actionPending: true,
+        actionPendingUntil: Date.now() + 15000,
+        actionDesiredIsTracking: true,
+        actionPendingActivityId: String(activity.id),
+      };
+      tracking.set(optimisticStartState);
       try {
         const result = await startTracking(activity.id);
-        tracking.set({
-          isTracking: true,
-          activityId: String(activity.id),
-          activityName: activity.name,
-          activityColor: activity.color,
-          startedAt: result?.startedAt || new Date().toISOString(),
-          noteText: result?.note?.text || null,
-        });
+        tracking.update((t) => ({
+          ...t,
+          startedAt: result?.startedAt || t.startedAt,
+          noteText: result?.note?.text || t.noteText,
+        }));
         selectedActivity.set(null);
       } catch (err) {
         console.error('Failed to start tracking (Enter):', err);
+        tracking.set({
+          isTracking: false,
+          activityId: null,
+          activityName: null,
+          activityColor: null,
+          startedAt: null,
+          noteText: null,
+          notePending: false,
+          notePendingUntil: null,
+          actionPending: false,
+          actionPendingUntil: null,
+          actionDesiredIsTracking: null,
+          actionPendingActivityId: null,
+        });
       }
     }
   }
@@ -314,6 +446,8 @@
   :global(html, body) {
     margin: 0;
     padding: 0;
+    width: 100%;
+    height: 100%;
     overflow: hidden;
     background: transparent;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
