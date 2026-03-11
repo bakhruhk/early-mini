@@ -8,6 +8,7 @@
 /// - Quit
 ///
 /// Left-click toggles miniplayer visibility.
+use log::info;
 use tauri::{
     image::Image,
     menu::{MenuBuilder, MenuItem},
@@ -52,18 +53,21 @@ pub fn setup_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>
         .on_menu_event(move |app, event| {
             match event.id().as_ref() {
                 "quit" => {
+                    info!("Tray action: quit requested");
                     app.exit(0);
                 }
                 "show_hide" => {
                     if let Some(window) = app.get_webview_window("main") {
                         let state = app.state::<AppState>();
                         if window.is_visible().unwrap_or(false) {
+                            info!("Tray action: hiding main window");
                             let _ = window.hide();
                             if let Ok(mut v) = state.window_visible.lock() {
                                 *v = false;
                             }
                             // Update menu item text — we'll update on next tray open
                         } else {
+                            info!("Tray action: showing main window");
                             let _ = window.show();
                             let _ = window.set_focus();
                             if let Ok(mut v) = state.window_visible.lock() {
@@ -77,6 +81,7 @@ pub fn setup_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>
                         let currently_on_top =
                             window.is_always_on_top().unwrap_or(true);
                         let new_value = !currently_on_top;
+                        info!("Tray action: set always-on-top to {new_value}");
                         let _ = window.set_always_on_top(new_value);
 
                         // Update settings in memory
@@ -100,11 +105,13 @@ pub fn setup_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>
                 if let Some(window) = app.get_webview_window("main") {
                     let state = app.state::<AppState>();
                     if window.is_visible().unwrap_or(false) {
+                        info!("Tray icon click: hiding main window");
                         let _ = window.hide();
                         if let Ok(mut v) = state.window_visible.lock() {
                             *v = false;
                         }
                     } else {
+                        info!("Tray icon click: showing main window");
                         let _ = window.show();
                         let _ = window.set_focus();
                         if let Ok(mut v) = state.window_visible.lock() {
